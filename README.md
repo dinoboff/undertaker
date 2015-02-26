@@ -123,7 +123,126 @@ property that can be used to determine if the node is a `task` or `function`.
 
 ## Custom Registries
 
-Coming Soon...
+Custom registries are constructor allowing you to pre-define/share tasks 
+or add custom functionality to your registries.
+
+A registries prototype should define:
+
+- `get(taskName)`: returns the task with that name 
+   or `undefined` if no task is registered with that name;
+- `set(taskName, fn)`: add task to the registry;
+- `tasks()`: returns an object listing all tasks in the registry.
+
+The easiest way to create a custom registry is to inherits from 
+`undertaker-registry`:
+
+```javascript
+var util = require('util');
+
+var DefaultRegistry = require('undertaker-registry');
+
+function MyRegistry(){
+  DefaultRegistry.call(this);
+}
+
+util.inherits(MyRegistry, DefaultRegistry);
+
+module.exports = MyRegistry;
+```
+
+### Sharing task
+
+To share common tasks with all your projects, you can set a registry with those 
+task pre-defined. For example you might want to share a `clean` task:
+
+```javascript
+var fs = require('fs');
+var util = require('util');
+
+var DefaultRegistry = require('undertaker-registry');
+var del = require('del');
+
+function CommonRegistry(){
+  DefaultRegistry.call(this);
+
+  var buildDir = './build';
+  var exists = fs.existsSync(buildDir);
+
+  if(exists){
+    throw new Error('Cannot initialize common tasks. `build/` directory exists.');
+  }
+
+  this.set('clean', function(cb){
+    del([buildDir], cb);
+  });
+}
+
+util.inherits(CommonRegistry, DefaultRegistry);
+
+module.exports = CommonRegistry;
+```
+
+Then to use it in any of a project:
+```javascript
+var Undertaker = require('undertaker');
+var CommonRegistry = require('myorg-common-tasks');
+
+var taker = new Undertaker(CommonRegistry);
+
+taker.task('build', taker.series('clean', function build(cb) {
+  // do things
+  cb();
+}));
+```
+
+
+### Sharing Functionalities
+
+If you define tasks in many packages but would like them all to share some data, 
+you can use a custom registry to bind them to those data:
+
+```javascript
+var util = require('util');
+
+var Undertaker = require('undertaker');
+var CommonRegistry = require('myorg-common-tasks');
+var DefaultRegistry = require('undertaker-registry');
+
+var BuildRegistery = require('./build.js');
+var ServeRegistery = require('./serve.js');
+
+
+function ConfigRegistry(config){
+  DefaultRegistry.call(this);
+  this.config = config;
+}
+
+util.inherits(ConfigRegistry, DefaultRegistry);
+
+ConfigRegistry.prototype.set = function set(name, fn) {
+  var task = this._tasks[name] = fn.bind(this.config);
+  return task;
+};
+
+var taker = new Undertaker();
+
+taker.registry(new BuildRegistery());
+taker.registry(new ServeRegistery());
+
+// `taker.registry` will reset each task in the registry with 
+// `ConfigRegistry.prototype.set` which will bind them to the config object.
+taker.registry(new ConfigRegistry({
+  src: './src',
+  build: './build',
+  bindTo: '0.0.0.0:8888' 
+}));
+
+taker.task('default', taker.series('clean', 'build', 'serve', function default(cb) {
+  console.log('Server bind to ' + this.bindTo);
+  console.log('Serving' + this.build);
+  cb();
+}))
+```
 
 ## License
 
